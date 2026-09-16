@@ -1,33 +1,87 @@
-- name: Compile Kernel
+name: Build Gram Kernel (Fixed AOSP Clang)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Setup Dependencies & Python 2
+        run: |
+          sudo apt update -y
+          sudo apt install -y bc bison flex libssl-dev libelf-dev zip ca-certificates curl git make python2 \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+
+      - name: Clone Toolchains (Android 12 Clang & GCC 4.9)
+        run: |
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 $HOME/clang-repo
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 $HOME/gcc-64
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 $HOME/gcc-32
+
+          # Assembler symlinks
+          for bin in $HOME/gcc-64/bin/aarch64-linux-android-*; do
+            ln -sf "$bin" "${bin/aarch64-linux-android-/aarch64-linux-gnu-}"
+          done
+          for bin in $HOME/gcc-32/bin/arm-linux-androideabi-*; do
+            ln -sf "$bin" "${bin/arm-linux-androideabi-/arm-linux-gnueabi-}"
+          done
+
+      - name: Clone Gram Kernel Source
+        run: |
+          git clone --depth=1 -b gram-q-oss https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource.git $HOME/kernel
+
+      - name: Compile Kernel
         run: |
           cd $HOME/kernel
-          
+
           # 1. dtc multiple definition of 'yylloc' ফিক্স
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
-          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
-          
-          # 2. ড্রাইভার ও টেকপ্যাক থেকে হার্ডকোডেড -Werror মুছে ফেলা
-          find drivers/ techpack/ -type f \( -name "Makefile" -o -name "Kbuild" \) -exec sed -i 's/-Werror//g' {} + || true
-          
-          # 3. Android 12 Clang পাথ লোড করা
+
+          # 2. পুরো কার্নেল ট্রি থেকে সব -Werror মুছে ফেলা
+          find . -type f \( -name "Makefile*" -o -name "Kbuild*" \) -exec sed -i 's/-Werror//g' {} + || true
+
+          # 3. Clang পাথ সেট
           CLANG_DIR=$(find $HOME/clang-repo -maxdepth 1 -type d -name "clang-r*" | sort -V | tail -n 1)
           export PATH="$CLANG_DIR/bin:$HOME/gcc-64/bin:$HOME/gcc-32/bin:$PATH"
-          
-          # 4. বিল্ড প্যারামিটার
-          MAKE_PARAMS="ARCH=arm64 \
-                       CC=clang \
-                       CLANG_TRIPLE=aarch64-linux-gnu- \
-                       CROSS_COMPILE=aarch64-linux-android- \
-                       CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-                       HOSTCFLAGS=-fcommon \
-                       HOSTCXXFLAGS=-fcommon"
 
-          # 5. Defconfig তৈরি
-          make -j$(nproc) O=out $MAKE_PARAMS vendor/atoll-perf_defconfig
-          
-          # 6. কার্নেল কম্পাইলেশন এবং এরর ক্যাপচার
-          make -j$(nproc) O=out $MAKE_PARAMS KCFLAGS="-Wno-error" all 2>&1 | tee build_log.txt || {
-            echo "====================== REAL ERROR SUMMARY ======================"
-            grep -inE "error:|fatal error:|undefined reference" build_log.txt | tail -n 25
-            exit 1
-          }
+          # 4. Defconfig তৈরি
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            HOSTCFLAGS="-fcommon" \
+            HOSTCXXFLAGS="-fcommon" \
+            vendor/atoll-perf_defconfig
+
+          # 5. সম্পূর্ণ কার্নেল কম্পাইলেশন (সব ধরনের ওয়ার্নিং ডিসেবল করে)
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            HOSTCFLAGS="-fcommon" \
+            HOSTCXXFLAGS="-fcommon" \
+            KCFLAGS="-w" \
+            KCPPFLAGS="-w" \
+            all
+
+      - name: Package with AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $HOME/AK3
+          find $HOME/kernel/out/arch/arm64/boot/ -maxdepth 1 -name "Image*" -exec cp {} $HOME/AK3/ \;
+          find $HOME/kernel/out/arch/arm64/boot/ -maxdepth 1 -name "dtbo.img" -exec cp {} $HOME/AK3/ \; || true
+
+          cd $HOME/AK3
+          sed -i 's/device.name1=.*/device.name1=gram/g' anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=miatoll/g' anykernel.sh
+          zip -r9 $HOME/gram-kernel-fixed.zip * -x .git README.md
+
+      - name: Upload Kernel Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gram-Kernel-Release
+          path: /home/runner/gram-kernel-fixed.zip
