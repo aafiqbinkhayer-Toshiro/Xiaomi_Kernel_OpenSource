@@ -1,4 +1,4 @@
-n- name: Compile Kernel
+- name: Compile Kernel
         run: |
           cd $HOME/kernel
           
@@ -31,8 +31,3 @@ n- name: Compile Kernel
             grep -inE "error:|fatal error:|undefined reference" build_log.txt | tail -n 25
             exit 1
           }
-      - name: Upload Kernel Zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gram-Android12-Kernel
-          path: /home/runner/gram-kernel-android12.zip
