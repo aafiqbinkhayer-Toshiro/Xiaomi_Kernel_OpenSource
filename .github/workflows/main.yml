@@ -6,9 +6,17 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Setup Environment
+      - name: Setup Dependencies & Cross Compilers
         run: |
-          sudo apt update -y && sudo apt install -y bc bison flex libssl-dev libelf-dev zip
+          sudo apt update -y
+          sudo apt install -y bc bison flex libssl-dev libelf-dev zip python2 \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+          
+          # Python 2 কে ডিফল্ট করা
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+          
+          # Proton Clang ক্লোন
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/clang
           git clone --depth=1 -b gram-q-oss https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource.git $HOME/kernel
 
@@ -16,9 +24,19 @@ jobs:
         run: |
           cd $HOME/kernel
           export PATH="$HOME/clang/bin:$PATH"
-          make -j$(nproc) O=out ARCH=arm64 vendor/atoll-perf_defconfig
+          
+          # Defconfig তৈরি (CLANG_TRIPLE সহ)
           make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            vendor/atoll-perf_defconfig
+
+          # কার্নেল কম্পাইলেশন
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             KCFLAGS="-Wno-error" \
@@ -36,4 +54,3 @@ jobs:
         with:
           name: Gram-Kernel-SM6250
           path: /home/runner/gram-kernel.zip
-          access-token: ${{ secrets.GITHUB_TOKEN }}
