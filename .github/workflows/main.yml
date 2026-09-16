@@ -1,4 +1,4 @@
-name: Build Gram Kernel (Stock AOSP Clang r353983c)
+name: Build Gram Kernel (Android 12 Clang)
 on:
   workflow_dispatch:
 
@@ -12,14 +12,14 @@ jobs:
           sudo apt install -y bc bison flex libssl-dev libelf-dev zip ca-certificates curl git make python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Clone Stock Clang r353983c & GCC 4.9 (Google Official Git)
+      - name: Clone Android 12 Toolchains (Clang & GCC 4.9)
         run: |
-          # AOSP Clang (android10-release ব্রাঞ্চে Clang r353983c অন্তর্ভুক্ত থাকে)
-          git clone --depth=1 -b android10-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 $HOME/clang-repo
+          # Android 12 অফিসিয়াল Clang (clang-r416183b)
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 $HOME/clang-repo
           
-          # AOSP GCC 4.9 (অ্যাসেম্বলার এবং লিংকারের জন্য)
-          git clone --depth=1 -b android-10.0.0_r47 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 $HOME/gcc-64
-          git clone --depth=1 -b android-10.0.0_r47 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 $HOME/gcc-32
+          # Android 12 GCC 4.9 (অ্যাসেম্বলার এবং 32/64-bit লিংকার)
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 $HOME/gcc-64
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 $HOME/gcc-32
 
       - name: Clone Gram Kernel Source
         run: |
@@ -29,20 +29,26 @@ jobs:
         run: |
           cd $HOME/kernel
           
-          # Clang r353983c এবং GCC এর পাথ সেট করা
-          export PATH="$HOME/clang-repo/clang-r353983c/bin:$HOME/gcc-64/bin:$HOME/gcc-32/bin:$PATH"
+          # 1. dtc multiple definition of 'yylloc' এর স্থায়ী ফিক্স
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
           
-          # বিল্ড আর্গুমেন্ট
+          # 2. Android 12 Clang পাথ লোড করা
+          CLANG_PATH=$(find $HOME/clang-repo -maxdepth 1 -type d -name "clang-r*" | head -n 1)
+          export PATH="$CLANG_PATH/bin:$HOME/gcc-64/bin:$HOME/gcc-32/bin:$PATH"
+          
+          # 3. বিল্ড প্যারামিটার (HOSTCFLAGS এ -fcommon দিয়ে হোস্ট GCC ফিক্স নিশ্চিত করা)
           MAKE_PARAMS="ARCH=arm64 \
                        CC=clang \
                        CLANG_TRIPLE=aarch64-linux-gnu- \
                        CROSS_COMPILE=aarch64-linux-android- \
-                       CROSS_COMPILE_ARM32=arm-linux-androideabi-"
+                       CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+                       HOSTCFLAGS=-fcommon \
+                       HOSTCXXFLAGS=-fcommon"
 
-          # 1. Defconfig তৈরি
+          # 4. Defconfig তৈরি
           make -j$(nproc) O=out $MAKE_PARAMS vendor/atoll-perf_defconfig
           
-          # 2. সম্পূর্ণ কার্নেল কম্পাইলেশন
+          # 5. কার্নেল কম্পাইলেশন
           make -j$(nproc) O=out $MAKE_PARAMS KCFLAGS="-Wno-error" all
 
       - name: Package with AnyKernel3
@@ -54,10 +60,10 @@ jobs:
           cd $HOME/AK3
           sed -i 's/device.name1=.*/device.name1=gram/g' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=miatoll/g' anykernel.sh
-          zip -r9 $HOME/gram-kernel-r353983c.zip * -x .git README.md
+          zip -r9 $HOME/gram-kernel-android12.zip * -x .git README.md
 
       - name: Upload Kernel Zip
         uses: actions/upload-artifact@v4
         with:
-          name: Gram-Q-OSS-Kernel
-          path: /home/runner/gram-kernel-r353983c.zip
+          name: Gram-Android12-Kernel
+          path: /home/runner/gram-kernel-android12.zip
