@@ -9,17 +9,26 @@ jobs:
       - name: Setup Dependencies & Python 2
         run: |
           sudo apt update -y
-          sudo apt install -y bc bison flex libssl-dev libelf-dev zip ca-certificates curl git make python2
+          sudo apt install -y bc bison flex libssl-dev libelf-dev zip ca-certificates curl git make python2 \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Clone Android 12 Toolchains (Clang & GCC 4.9)
         run: |
-          # Android 12 অফিসিয়াল Clang (clang-r416183b)
+          # Android 12 অফিসিয়াল Clang
           git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 $HOME/clang-repo
           
-          # Android 12 GCC 4.9 (অ্যাসেম্বলার এবং 32/64-bit লিংকার)
+          # Android 12 GCC 4.9 (64-bit ও 32-bit)
           git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 $HOME/gcc-64
           git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 $HOME/gcc-32
+
+          # Clang যাতে অ্যাসেম্বলার খুঁজে পায় তার জন্য android- থেকে gnu- সিমলিঙ্ক তৈরি
+          for bin in $HOME/gcc-64/bin/aarch64-linux-android-*; do
+            ln -sf "$bin" "${bin/aarch64-linux-android-/aarch64-linux-gnu-}"
+          done
+          for bin in $HOME/gcc-32/bin/arm-linux-androideabi-*; do
+            ln -sf "$bin" "${bin/arm-linux-androideabi-/arm-linux-gnueabi-}"
+          done
 
       - name: Clone Gram Kernel Source
         run: |
@@ -29,14 +38,17 @@ jobs:
         run: |
           cd $HOME/kernel
           
-          # 1. dtc multiple definition of 'yylloc' এর স্থায়ী ফিক্স
+          # 1. dtc multiple definition of 'yylloc' এর স্থায়ী ফিক্স
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
           
-          # 2. Android 12 Clang পাথ লোড করা
-          CLANG_PATH=$(find $HOME/clang-repo -maxdepth 1 -type d -name "clang-r*" | head -n 1)
-          export PATH="$CLANG_PATH/bin:$HOME/gcc-64/bin:$HOME/gcc-32/bin:$PATH"
+          # 2. Android 12 Clang পাথ লোড ও ভেরিফিকেশন
+          CLANG_DIR=$(find $HOME/clang-repo -maxdepth 1 -type d -name "clang-r*" | sort -V | tail -n 1)
+          export PATH="$CLANG_DIR/bin:$HOME/gcc-64/bin:$HOME/gcc-32/bin:$PATH"
+          echo "Using Clang from: $CLANG_DIR"
+          clang --version
           
-          # 3. বিল্ড প্যারামিটার (HOSTCFLAGS এ -fcommon দিয়ে হোস্ট GCC ফিক্স নিশ্চিত করা)
+          # 3. বিল্ড প্যারামিটার
           MAKE_PARAMS="ARCH=arm64 \
                        CC=clang \
                        CLANG_TRIPLE=aarch64-linux-gnu- \
