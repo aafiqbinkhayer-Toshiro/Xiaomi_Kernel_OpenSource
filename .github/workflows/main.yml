@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Build Kernel
-        uses: dabao1955/kernel_build_action@v1.6.1
+        uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource
-          kernel-branch: gram-q-oss
+          branch: gram-q-oss
           config: vendor/atoll-perf_defconfig
           arch: arm64
           aosp-gcc: true
