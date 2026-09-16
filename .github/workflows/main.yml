@@ -1,4 +1,4 @@
-name: Minimal Gram Kernel Build
+name: Build Gram Kernel (AOSP GCC 4.9)
 on:
   workflow_dispatch:
 
@@ -6,48 +6,47 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Setup Dependencies & Cross Compilers
+      - name: Setup Dependencies & Python 2
         run: |
           sudo apt update -y
-          sudo apt install -y bc bison flex libssl-dev libelf-dev zip python2 \
-            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
-          
-          # Python 2 কে ডিফল্ট করা
+          sudo apt install -y bc bison flex libssl-dev libelf-dev zip ca-certificates curl git make python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
-          
-          # Proton Clang ক্লোন
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/clang
+
+      - name: Clone AOSP GCC 4.9 (Google Official - No 503 Error)
+        run: |
+          # Git clone ব্যবহার করায় টারবল ডাউনলোড বা 503 এরর আসবে না
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 $HOME/gcc-64
+          git clone --depth=1 -b android12-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 $HOME/gcc-32
+
+      - name: Clone Gram Kernel Source
+        run: |
           git clone --depth=1 -b gram-q-oss https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource.git $HOME/kernel
 
       - name: Build Kernel
         run: |
           cd $HOME/kernel
-          export PATH="$HOME/clang/bin:$PATH"
+          export PATH="$HOME/gcc-64/bin:$HOME/gcc-32/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
           
-          # Defconfig তৈরি (CLANG_TRIPLE সহ)
-          make -j$(nproc) O=out ARCH=arm64 \
-            CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            vendor/atoll-perf_defconfig
-
-          # কার্নেল কম্পাইলেশন
-          make -j$(nproc) O=out ARCH=arm64 \
-            CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            KCFLAGS="-Wno-error" \
-            all
+          # 1. Defconfig তৈরি
+          make -j$(nproc) O=out vendor/atoll-perf_defconfig
+          
+          # 2. কার্নেল কম্পাইলেশন
+          make -j$(nproc) O=out KCFLAGS="-Wno-error" all
 
       - name: Package AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $HOME/AK3
           find $HOME/kernel/out/arch/arm64/boot/ -maxdepth 1 -name "Image*" -exec cp {} $HOME/AK3/ \;
           find $HOME/kernel/out/arch/arm64/boot/ -maxdepth 1 -name "dtbo.img" -exec cp {} $HOME/AK3/ \; || true
-          cd $HOME/AK3 && zip -r9 $HOME/gram-kernel.zip * -x .git README.md
+          
+          cd $HOME/AK3
+          sed -i 's/device.name1=.*/device.name1=gram/g' anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=miatoll/g' anykernel.sh
+          zip -r9 $HOME/gram-kernel.zip * -x .git README.md
 
       - name: Upload Kernel Zip
         uses: actions/upload-artifact@v4
