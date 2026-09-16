@@ -7,12 +7,18 @@ jobs:
   build-kernel:
     name: Build Kernel
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write  # release: true এর জন্য প্রয়োজনীয় পারমিশন
+
     steps:
+      - name: Fix Docker RMI Bug
+        run: docker pull alpine:latest  # এটি ডকার ইমেজ লিস্ট খালি হওয়া আটকাবে
+
       - name: Build Kernel
-        uses: dabao1955/kernel_build_action@main
+        uses: dabao1955/kernel_build_action@v1.6.1
         with:
           kernel-url: https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource
-          branch: gram-q-oss
+          branch: gram-q-oss  # kernel-branch এর বদলে branch
           config: vendor/atoll-perf_defconfig
           arch: arm64
           aosp-gcc: true
