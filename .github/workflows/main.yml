@@ -1,30 +1,39 @@
-name: Build Gram Kernel (gram-q-oss)
-
+name: Minimal Gram Kernel Build
 on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
-    name: Build Kernel
+  build:
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write  # release: true এর জন্য প্রয়োজনীয় পারমিশন
-
     steps:
-      - name: Fix Docker RMI Bug
-        run: docker pull alpine:latest  # এটি ডকার ইমেজ লিস্ট খালি হওয়া আটকাবে
+      - name: Setup Environment
+        run: |
+          sudo apt update -y && sudo apt install -y bc bison flex libssl-dev libelf-dev zip
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/clang
+          git clone --depth=1 -b gram-q-oss https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource.git $HOME/kernel
 
       - name: Build Kernel
-        uses: dabao1955/kernel_build_action@v1.6.1
+        run: |
+          cd $HOME/kernel
+          export PATH="$HOME/clang/bin:$PATH"
+          make -j$(nproc) O=out ARCH=arm64 vendor/atoll-perf_defconfig
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            KCFLAGS="-Wno-error" \
+            all
+
+      - name: Package AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $HOME/AK3
+          find $HOME/kernel/out/arch/arm64/boot/ -maxdepth 1 -name "Image*" -exec cp {} $HOME/AK3/ \;
+          find $HOME/kernel/out/arch/arm64/boot/ -maxdepth 1 -name "dtbo.img" -exec cp {} $HOME/AK3/ \; || true
+          cd $HOME/AK3 && zip -r9 $HOME/gram-kernel.zip * -x .git README.md
+
+      - name: Upload Kernel Zip
+        uses: actions/upload-artifact@v4
         with:
-          kernel-url: https://github.com/aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource
-          branch: gram-q-oss  # kernel-branch এর বদলে branch
-          config: vendor/atoll-perf_defconfig
-          arch: arm64
-          aosp-gcc: true
-          aosp-clang: true
-          android-version: "10"
-          aosp-clang-version: r353983c
-          anykernel3: true
-          release: true
+          name: Gram-Kernel-SM6250
+          path: /home/runner/gram-kernel.zip
           access-token: ${{ secrets.GITHUB_TOKEN }}
