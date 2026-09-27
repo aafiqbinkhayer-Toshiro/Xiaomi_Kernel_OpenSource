@@ -1,0 +1,59 @@
+name: Build sunstone-u-oss Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Config fragment to merge onto gki_defconfig'
+        required: true
+        type: choice
+        options:
+          - QGKI
+          - GKI
+        default: QGKI
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: aafiqbinkhayer-Toshiro/Xiaomi_Kernel_OpenSource
+          ref: sunstone-u-oss
+          path: common
+          fetch-depth: 1
+
+      - name: Fetch Android Common Kernel build tools
+        run: git clone --depth=1 https://android.googlesource.com/kernel/build build
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
+            build-essential dwarves rsync kmod cpio git curl zip \
+            device-tree-compiler
+
+      - name: Build kernel
+        run: |
+          export BUILD_CONFIG=common/build.config.gki.aarch64
+          export FRAGMENT_CONFIG=arch/arm64/configs/vendor/sunstone_${{ github.event.inputs.variant }}.config
+          build/build.sh 2>&1 | tee build.log
+
+      - name: Verify kernel image exists
+        run: |
+          if ! find out -name "Image*" | grep -q .; then
+            echo "Build failed — no Image produced. Check build.log."
+            exit 1
+          fi
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: sunstone-u-oss-kernel-${{ github.event.inputs.variant }}
+          path: |
+            out/**/dist/Image*
+            out/**/dist/*.ko
+            out/**/dist/*.dtb
+            build.log
+            
