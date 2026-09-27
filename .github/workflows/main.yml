@@ -26,8 +26,19 @@ jobs:
 
       - name: Fetch matching build tools (MiCode's kernel_build, same branch)
         run: |
-          git clone --depth=1 -b sunstone-u-oss https://github.com/MiCode/kernel_build.git build || \
-          git clone --depth=1 https://github.com/MiCode/kernel_build.git build
+          set -x
+          echo "--- checking for a sunstone-u-oss branch in MiCode/kernel_build ---"
+          if git ls-remote --exit-code --heads https://github.com/MiCode/kernel_build.git sunstone-u-oss; then
+            echo "branch found, cloning it"
+            git clone --depth=1 -b sunstone-u-oss https://github.com/MiCode/kernel_build.git build
+          else
+            echo "no sunstone-u-oss branch — cloning default branch instead"
+            git clone --depth=1 https://github.com/MiCode/kernel_build.git build
+          fi
+          echo "--- contents of build/ (top 2 levels) ---"
+          find build -maxdepth 2 | sort
+          echo "--- looking for build.sh anywhere in build/ ---"
+          find build -iname "build.sh" -o -iname "*.sh" | head -30
 
       - name: Install build dependencies
         run: |
@@ -58,4 +69,3 @@ jobs:
             out/**/dist/*.ko
             out/**/dist/*.dtb
             build.log
-            
