@@ -24,8 +24,10 @@ jobs:
           path: common
           fetch-depth: 1
 
-      - name: Fetch Android Common Kernel build tools
-        run: git clone --depth=1 https://android.googlesource.com/kernel/build build
+      - name: Fetch matching build tools (MiCode's kernel_build, same branch)
+        run: |
+          git clone --depth=1 -b sunstone-u-oss https://github.com/MiCode/kernel_build.git build || \
+          git clone --depth=1 https://github.com/MiCode/kernel_build.git build
 
       - name: Install build dependencies
         run: |
